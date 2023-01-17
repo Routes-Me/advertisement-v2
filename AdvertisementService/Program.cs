@@ -1,0 +1,30 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace AdvertisementService
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            string standardVersion = "Standard version: " + "{0}.{1}.{2}";
+            Version standard = new Version(1, 0, 0);
+            Console.WriteLine(standardVersion, standard.Major, standard.Minor, standard.Build);
+
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.UseStartup<Startup>();
+                });
+    }
+}
