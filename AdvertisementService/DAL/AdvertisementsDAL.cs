@@ -5,9 +5,12 @@ using AdvertisementService.Models.Common;
 using AdvertisementService.Models.DBModels;
 using AdvertisementService.Models.Dtos;
 using AutoMapper;
+using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RoutesSecurity;
@@ -16,6 +19,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static AdvertisementService.Models.Response;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace AdvertisementService.DAL
 {
@@ -38,21 +42,27 @@ namespace AdvertisementService.DAL
             _config = config;
         }
 
-        internal async Task DeleteAdvertisementAsync(string id)
+        internal async Task<Advertisements> DeleteAdvertisementAsync(string id)
         {
             try
             {
-                var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(id), null, x => x.AdvertisementsIntervals, x => x.Broadcasts);
+                var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(id), null, x => x.AdvertisementsIntervals, x => x.Broadcasts, x => x.Media, x => x.Media.MediaMetadata);
+                var mediaReferenceName = advertisement.Media.Url.Split('/');
 
 
 
                 if (advertisement == null)
-                    throw new Exception(CommonMessage.AdvertisementNotFound);
-
-                var medias = _unitOfWork.MediaRepository.Get(null, x => x.AdvertisementId == advertisement.AdvertisementId, null, x => x.MediaMetadata).ToList();
-
+                    throw new KeyNotFoundException(CommonMessage.AdvertisementNotFound);
 
                 _unitOfWork.BeginTransaction();
+
+
+                _unitOfWork.MediaMetadataRepository.Remove(advertisement.Media.MediaMetadata);
+                _unitOfWork.Save();
+                _unitOfWork.AdvertisementRepository.Remove(advertisement);
+                _unitOfWork.Save();
+
+                APIExtensions.DeleteApi(_appSettings.Host + _dependencies.PromotionsByAdvertisementUrl + id);
 
                 if (CloudStorageAccount.TryParse(_config.StorageConnection, out CloudStorageAccount storageAccount))
                 {
@@ -60,23 +70,14 @@ namespace AdvertisementService.DAL
                     CloudBlobContainer container = BlobClient.GetContainerReference(_config.Container);
                     if (await container.ExistsAsync())
                     {
-                        foreach (var media in medias)
-                        {
-                            var mediaReferenceName = media.Url.Split('/');
-                            CloudBlob file = container.GetBlobReference(mediaReferenceName.LastOrDefault());
-                            if (await file.ExistsAsync())
-                                await file.DeleteAsync();
-
-                            await _unitOfWork.MediaMetadataRepository.DeleteAsync(Convert.ToInt32(media.MediaMetadataId));
-                            _unitOfWork.Save();
-                        }
-
+                        CloudBlob file = container.GetBlobReference(mediaReferenceName.LastOrDefault());
+                        if (await file.ExistsAsync())
+                            await file.DeleteAsync();
                     }
                 }
-                await _unitOfWork.AdvertisementRepository.DeleteAsync(advertisement.AdvertisementId);
-                _unitOfWork.Save();
 
                 _unitOfWork.Commit();
+                return advertisement;
 
             }
             catch (Exception ex)
@@ -86,7 +87,6 @@ namespace AdvertisementService.DAL
             }
 
 
-            //APIExtensions.DeleteApi(_appSettings.Host + _dependencies.PromotionsByAdvertisementUrl + id);
 
 
 
@@ -96,16 +96,18 @@ namespace AdvertisementService.DAL
 
         internal GetResponse<GetAdvertisementsDto> GetAdvertisementById(string id, string include)
         {
-            GetResponse<GetAdvertisementsDto> response = new GetResponse<GetAdvertisementsDto>();
-            List<GetAdvertisementsDto> getAdvertisementsDtoList = new List<GetAdvertisementsDto>();
+            var response = new GetResponse<GetAdvertisementsDto>();
+            var getAdvertisementsDtoList = new List<GetAdvertisementsDto>();
             dynamic includeData = new JObject();
-            List<GetMediaDto> getMediaDtoList = new List<GetMediaDto>();
-            List<GetCampaignDto> getCampaignDtoList = new List<GetCampaignDto>();
+            var getMediaDtoList = new List<GetMediaDto>();
+            var getCampaignDtoList = new List<GetCampaignDto>();
 
-            var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(id), null, x => x.AdvertisementsIntervals, x => x.Broadcasts);
-            List<GetCampaignDto> lstItems = new List<GetCampaignDto>();
+            var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(id), null, x => x.AdvertisementsIntervals, x => x.Broadcasts, x => x.Media, x => x.Media.MediaMetadata);
+            if (advertisement == null)
+                return ReturnResponse.ErrorResponse(CommonMessage.AdvertisementNotFound, 404);
 
-            GetAdvertisementsDto getAdvertisementsDto = new GetAdvertisementsDto
+
+            var getAdvertisementsDto = new GetAdvertisementsDto
             {
                 AdvertisementId = Obfuscation.Encode(advertisement.AdvertisementId),
                 ResourceNumber = advertisement.ResourceNumber,
@@ -113,25 +115,11 @@ namespace AdvertisementService.DAL
                 InstitutionId = Obfuscation.Encode(Convert.ToInt32(advertisement.InstitutionId)),
                 CreatedAt = advertisement.CreatedAt,
                 TintColor = advertisement.TintColor,
-                InvertedTintColor = advertisement.InvertedTintColor
+                InvertedTintColor = advertisement.InvertedTintColor,
+                CampaignId = advertisement.Broadcasts.Select(x => Obfuscation.Encode(x.CampaignId)).ToList(),
+                IntervalId = advertisement.AdvertisementsIntervals.Select(x => Obfuscation.Encode(x.IntervalId)).FirstOrDefault()
             };
-
-            getAdvertisementsDto.Campaign = new List<GetCampaignDto>();
-
-            foreach (var broadcast in advertisement.Broadcasts)
-            {
-                var campaign = _unitOfWork.CampaignRepository.GetById(x => x.CampaignId == broadcast.CampaignId, null, x => x.Broadcasts);
-                GetCampaignDto getCampaignDto = _mapper.Map<GetCampaignDto>(campaign);
-                getCampaignDto.Sort = campaign.Broadcasts.FirstOrDefault(x => x.AdvertisementId == advertisement.AdvertisementId).Sort;
-                getCampaignDto.CampaignId = Obfuscation.Encode(Convert.ToInt32(getCampaignDto.CampaignId));
-
-                getAdvertisementsDto.Campaign.Add(getCampaignDto);
-            }
-            getAdvertisementsDto.IntervalId = Obfuscation.Encode(advertisement.AdvertisementsIntervals.Select(x => x.IntervalId).FirstOrDefault());
-            getAdvertisementsDto.TintColor = advertisement.TintColor;
-            getAdvertisementsDto.InvertedTintColor = advertisement.InvertedTintColor;
             getAdvertisementsDtoList.Add(getAdvertisementsDto);
-
 
             if (!string.IsNullOrEmpty(include) && getAdvertisementsDtoList.Count > 0)
             {
@@ -146,16 +134,9 @@ namespace AdvertisementService.DAL
                         }
                         else if (included.ToLower() == "media" || included.ToLower() == "media")
                         {
-
-                            var media = _unitOfWork.MediaRepository.GetById(x => x.AdvertisementId == advertisement.AdvertisementId, null, x => x.MediaMetadata);
-
-                            if (media != null)
-                            {
-                                GetMediaDto getMedia = _mapper.Map<GetMediaDto>(media);
-                                getMedia.MediaId = Obfuscation.Encode(Convert.ToInt32(media.MediaId));
-                                getMediaDtoList.Add(getMedia);
-
-                            }
+                            var getMedia = _mapper.Map<GetMediaDto>(advertisement.Media);
+                            getMedia.MediaId = Obfuscation.Encode(Convert.ToInt32(getMedia.MediaId));
+                            getMediaDtoList.Add(getMedia);
                             includeData.media = JArray.Parse(JsonConvert.SerializeObject(getMediaDtoList.GroupBy(x => x.MediaId).Select(x => x.First()).ToList()));
                         }
                         else if (included.ToLower() == "campaign" || included.ToLower() == "campaigns")
@@ -177,6 +158,19 @@ namespace AdvertisementService.DAL
                     }
                 }
             }
+            else
+            {
+                getMediaDtoList.Add(_mapper.Map<GetMediaDto>(advertisement.Media));
+                getMediaDtoList[0].MediaId = Obfuscation.Encode(Convert.ToInt32(getMediaDtoList[0].MediaId));
+                includeData.media = JArray.Parse(JsonConvert.SerializeObject(getMediaDtoList.GroupBy(x => x.MediaId).Select(a => a.First()).ToList().Cast<dynamic>().ToList()));
+                foreach (var broadcast in advertisement.Broadcasts)
+                {
+                    var campaign = _unitOfWork.CampaignRepository.GetById(x => x.CampaignId == broadcast.CampaignId);
+                    var getCampaignDto = _mapper.Map<GetCampaignDto>(campaign);
+                    getCampaignDto.CampaignId = Obfuscation.Encode(Convert.ToInt32(getCampaignDto.CampaignId));
+                    getCampaignDtoList.Add(getCampaignDto);
+                }
+            }
 
             response.Status = true;
             response.Message = CommonMessage.AdvertisementRetrived;
@@ -189,17 +183,15 @@ namespace AdvertisementService.DAL
 
         internal GetResponse<GetAdvertisementsDto> GetAdvertisements(string include, Pagination pagination)
         {
-            GetResponse<GetAdvertisementsDto> response = new GetResponse<GetAdvertisementsDto>();
-            List<GetAdvertisementsDto> getAdvertisementsDtoList = new List<GetAdvertisementsDto>();
+            var response = new GetResponse<GetAdvertisementsDto>();
+            var getAdvertisementsDtoList = new List<GetAdvertisementsDto>();
             dynamic includeData = new JObject();
-            List<GetMediaDto> getMediaDtoList = new List<GetMediaDto>();
-            List<GetCampaignDto> getCampaignDtoList = new List<GetCampaignDto>();
+            var getMediaDtoList = new List<GetMediaDto>();
+            var getCampaignDtoList = new List<GetCampaignDto>();
 
-            var advertisements = _unitOfWork.AdvertisementRepository.Get(pagination, null, x => x.OrderBy(x => x.Broadcasts.FirstOrDefault().Sort), x => x.AdvertisementsIntervals, x => x.Broadcasts).ToList();
+            var advertisements = _unitOfWork.AdvertisementRepository.Get(pagination, null, x => x.OrderBy(x => x.Broadcasts.FirstOrDefault().Sort), x => x.AdvertisementsIntervals, x => x.Broadcasts, x => x.Media, x => x.Media.MediaMetadata).ToList();
             foreach (var advertisement in advertisements)
             {
-                List<GetCampaignDto> lstItems = new List<GetCampaignDto>();
-
                 GetAdvertisementsDto getAdvertisementsDto = new GetAdvertisementsDto
                 {
                     AdvertisementId = Obfuscation.Encode(advertisement.AdvertisementId),
@@ -209,21 +201,9 @@ namespace AdvertisementService.DAL
                     CreatedAt = advertisement.CreatedAt,
                     TintColor = advertisement.TintColor,
                     InvertedTintColor = advertisement.InvertedTintColor,
+                    CampaignId = advertisement.Broadcasts.Select(x => Obfuscation.Encode(x.CampaignId)).ToList(),
+                    IntervalId = advertisement.AdvertisementsIntervals.Select(x => Obfuscation.Encode(x.IntervalId)).FirstOrDefault()
                 };
-                getAdvertisementsDto.Campaign = new List<GetCampaignDto>();
-
-                foreach (var broadcast in advertisement.Broadcasts)
-                {
-                    var campaign = _unitOfWork.CampaignRepository.GetById(x => x.CampaignId == broadcast.CampaignId, null, x => x.Broadcasts);
-                    GetCampaignDto getCampaignDto = _mapper.Map<GetCampaignDto>(campaign);
-                    getCampaignDto.CampaignId = Obfuscation.Encode(Convert.ToInt32(getCampaignDto.CampaignId));
-                    getCampaignDto.Sort = campaign.Broadcasts.FirstOrDefault(x => x.AdvertisementId == advertisement.AdvertisementId).Sort;
-                    getAdvertisementsDto.Campaign.Add(getCampaignDto);
-                }
-
-                getAdvertisementsDto.IntervalId = Obfuscation.Encode(advertisement.AdvertisementsIntervals.Select(x => x.IntervalId).FirstOrDefault());
-                getAdvertisementsDto.TintColor = advertisement.TintColor;
-                getAdvertisementsDto.InvertedTintColor = advertisement.InvertedTintColor;
                 getAdvertisementsDtoList.Add(getAdvertisementsDto);
             }
 
@@ -242,15 +222,9 @@ namespace AdvertisementService.DAL
                         {
                             foreach (var advertisement in advertisements)
                             {
-                                var media = _unitOfWork.MediaRepository.GetById(x => x.AdvertisementId == advertisement.AdvertisementId, null, x => x.MediaMetadata);
-
-                                if (media != null)
-                                {
-                                    GetMediaDto getMedia = _mapper.Map<GetMediaDto>(media);
-                                    getMedia.MediaId = Obfuscation.Encode(Convert.ToInt32(media.MediaId));
-                                    getMediaDtoList.Add(getMedia);
-
-                                }
+                                var getMedia = _mapper.Map<GetMediaDto>(advertisement.Media);
+                                getMedia.MediaId = Obfuscation.Encode(Convert.ToInt32(getMedia.MediaId));
+                                getMediaDtoList.Add(getMedia);
                             }
                             includeData.media = JArray.Parse(JsonConvert.SerializeObject(getMediaDtoList.GroupBy(x => x.MediaId).Select(x => x.First()).ToList()));
                         }
@@ -275,7 +249,26 @@ namespace AdvertisementService.DAL
                     }
                 }
             }
+            else
+            {
+                foreach (var advertisement in advertisements)
+                {
+                    var getMedia = _mapper.Map<GetMediaDto>(advertisement.Media);
+                    getMedia.MediaId = Obfuscation.Encode(Convert.ToInt32(getMedia.MediaId));
+                    getMediaDtoList.Add(getMedia);
 
+                    foreach (var broadcast in advertisement.Broadcasts)
+                    {
+                        var campaign = _unitOfWork.CampaignRepository.GetById(x => x.CampaignId == broadcast.CampaignId);
+                        GetCampaignDto getCampaignDto = _mapper.Map<GetCampaignDto>(campaign);
+                        getCampaignDto.CampaignId = Obfuscation.Encode(Convert.ToInt32(getCampaignDto.CampaignId));
+                        getCampaignDtoList.Add(getCampaignDto);
+                    }
+                }
+                includeData.media = JArray.Parse(JsonConvert.SerializeObject(getMediaDtoList.GroupBy(x => x.MediaId).Select(x => x.First()).ToList()));
+                includeData.campaign = JArray.Parse(JsonConvert.SerializeObject(getCampaignDtoList.GroupBy(x => x.CampaignId).Select(x => x.First()).ToList()));
+
+            }
             response.Status = true;
             response.Message = CommonMessage.AdvertisementRetrived;
             response.Pagination = pagination;
@@ -290,13 +283,12 @@ namespace AdvertisementService.DAL
         {
             var listCampaign = new List<Campaigns>();
             string fileExtension;
-            int? mediaId, MediaMetadataId;
+            int? mediaId = 0, MediaMetadataId = 0;
             try
             {
-                _unitOfWork.BeginTransaction();
                 var interval = _unitOfWork.IntervalRepository.GetById(Obfuscation.Decode(postAdvertisements.IntervalId));
                 if (interval == null)
-                    throw new KeyNotFoundException();
+                    throw new KeyNotFoundException(CommonMessage.IntervalNotFound);
 
                 if (postAdvertisements.CampaignId.Count > 0)
                 {
@@ -304,15 +296,60 @@ namespace AdvertisementService.DAL
                     {
                         var campaign = _unitOfWork.CampaignRepository.GetById(Obfuscation.Decode(id));
                         if (campaign == null)
-                            throw new KeyNotFoundException();
+                            throw new KeyNotFoundException(CommonMessage.CampaignNotFound);
                         listCampaign.Add(campaign);
                     }
                 }
+
+                if (!string.IsNullOrEmpty(postAdvertisements.MediaUrl))
+                {
+                    var existingMediaReferenceName = postAdvertisements.MediaUrl.Split('/');
+                    fileExtension = existingMediaReferenceName.Last().Split('.').Last();
+                    VideoMetadata videoMetadata = new VideoMetadata();
+                    MediaMetadata mediaMetadata = new MediaMetadata();
+
+                    if (fileExtension == "mp4")
+                    {
+                        videoMetadata = await _mediaTypeConversionRepository.ConvertVideoAsync(postAdvertisements.MediaUrl);
+                        mediaMetadata.Duration = videoMetadata.Duration;
+                        mediaMetadata.Size = videoMetadata.VideoSize;
+                    }
+                    else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
+                    {
+                        var imagesize = await _mediaTypeConversionRepository.ConvertImageAsync(postAdvertisements.MediaUrl);
+                        mediaMetadata.Duration = 0;
+                        mediaMetadata.Size = imagesize;
+                    }
+                    _unitOfWork.BeginTransaction();
+
+                    await _unitOfWork.MediaMetadataRepository.PostAsync(mediaMetadata);
+                    _unitOfWork.Save();
+                    MediaMetadataId = mediaMetadata.MediaMetadataId;
+
+                    Medias media = new Medias
+                    {
+                        Url = postAdvertisements.MediaUrl,
+                        CreatedAt = DateTime.Now
+                    };
+
+                    if (fileExtension == "mp4")
+                        media.MediaType = MediaType.video;
+                    else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
+                        media.MediaType = MediaType.image;
+                    media.MediaMetadataId = MediaMetadataId;
+
+                    await _unitOfWork.MediaRepository.PostAsync(media);
+                    _unitOfWork.Save();
+                    mediaId = media.MediaId;
+                }
+
+
                 var advertisement = new Advertisements()
                 {
                     Name = postAdvertisements.Name,
                     TintColor = postAdvertisements.TintColor,
                     InvertedTintColor = postAdvertisements.InvertedTintColor,
+                    MediaId = mediaId,
                     InstitutionId = Obfuscation.Decode(postAdvertisements.InstitutionId),
                     CreatedAt = DateTime.Now,
                     ResourceNumber = JsonConvert.DeserializeObject<ResourceNamesResponse>(APIExtensions.GetAPI(_appSettings.Host + _dependencies.IdentifiersUrl, "key=advertisements").Content).ResourceName.ToString()
@@ -332,64 +369,19 @@ namespace AdvertisementService.DAL
                     await _unitOfWork.AdvertisementsIntervalRepository.PostAsync(advertisementsinterval);
                     _unitOfWork.Save();
                 }
-                int counter = 1;
                 foreach (var _campaign in listCampaign)
                 {
                     Broadcasts broadcast = new Broadcasts()
                     {
                         AdvertisementId = advertisement.AdvertisementId,
                         CampaignId = _campaign.CampaignId,
-                        CreatedAt = DateTime.Now,
-                        Sort = counter
+                        CreatedAt = DateTime.Now
                     };
                     await _unitOfWork.BroadcastRepository.PostAsync(broadcast);
                     _unitOfWork.Save();
-                    counter++;
                 }
 
-                if (postAdvertisements.MediaUrl.Count > 0)
-                {
-                    for (int i = 0; i < postAdvertisements.MediaUrl.Count(); i++)
-                    {
-                        var existingMediaReferenceName = postAdvertisements.MediaUrl[i].Split('/');
-                        fileExtension = existingMediaReferenceName.Last().Split('.').Last();
-                        VideoMetadata videoMetadata = new VideoMetadata();
-                        MediaMetadata mediaMetadata = new MediaMetadata();
 
-                        if (fileExtension == "mp4")
-                        {
-                            videoMetadata = await _mediaTypeConversionRepository.ConvertVideoAsync(postAdvertisements.MediaUrl[i]);
-                            mediaMetadata.Duration = videoMetadata.Duration;
-                            mediaMetadata.Size = videoMetadata.VideoSize;
-                        }
-                        else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
-                        {
-                            var imagesize = await _mediaTypeConversionRepository.ConvertImageAsync(postAdvertisements.MediaUrl[i]);
-                            mediaMetadata.Duration = 0;
-                            mediaMetadata.Size = imagesize;
-                        }
-                        await _unitOfWork.MediaMetadataRepository.PostAsync(mediaMetadata);
-                        _unitOfWork.Save();
-                        MediaMetadataId = mediaMetadata.MediaMetadataId;
-
-                        Medias media = new Medias
-                        {
-                            Url = postAdvertisements.MediaUrl[i],
-                            CreatedAt = DateTime.Now
-                        };
-
-                        if (fileExtension == "mp4")
-                            media.MediaType = MediaType.video;
-                        else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
-                            media.MediaType = MediaType.image;
-                        media.MediaMetadataId = MediaMetadataId;
-                        media.AdvertisementId = advertisement.AdvertisementId;
-
-                        await _unitOfWork.MediaRepository.PostAsync(media);
-                        _unitOfWork.Save();
-                        mediaId = media.MediaId;
-                    }
-                }
                 _unitOfWork.Commit();
                 return advertisement;
             }
@@ -400,109 +392,167 @@ namespace AdvertisementService.DAL
             }
         }
 
-        internal async Task<GetResponse<Advertisements>> UpdateAdvertisementAsync(PostAdvertisementsDto advertisementsDto)
+        internal async Task<Response> UpdateAdvertisementAsync(PostAdvertisementsDto advertisementsDto)
         {
-            var advertisements = await _unitOfWork.AdvertisementRepository.GetAsync(null, x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId), null, x => x.Broadcasts, x => x.AdvertisementsIntervals);
-            if (advertisements.Count > 0)
+            try
             {
-                if (advertisements.FirstOrDefault().AdvertisementsIntervals.FirstOrDefault().IntervalId != Obfuscation.Decode(advertisementsDto.IntervalId))
+                int? mediaMetadataId = 0;
+                var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId));
+
+
+                if (advertisement == null)
+                    throw new KeyNotFoundException(CommonMessage.AdvertisementNotFound);
+                if (!string.IsNullOrEmpty(advertisementsDto.IntervalId))
                 {
                     var interval = _unitOfWork.IntervalRepository.GetById(x => x.IntervalId == Obfuscation.Decode(advertisementsDto.IntervalId));
                     if (interval != null)
                     {
-                        var advertisementInterval = new AdvertisementsIntervals
+                        var advertisementInterval = _unitOfWork.AdvertisementsIntervalRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId));
+                        if (advertisementInterval == null)
                         {
-                            AdvertisementId = Obfuscation.Decode(advertisementsDto.AdvertisementId),
-                            IntervalId = Obfuscation.Decode(advertisementsDto.IntervalId)
-                        };
-                        _unitOfWork.AdvertisementsIntervalRepository.Put(advertisementInterval);
-                        _unitOfWork.Save();
+                            var model = new AdvertisementsIntervals
+                            {
+                                AdvertisementId = Obfuscation.Decode(advertisementsDto.AdvertisementId),
+                                IntervalId = Obfuscation.Decode(advertisementsDto.IntervalId)
+                            };
+                            _unitOfWork.BeginTransaction();
+                            _unitOfWork.AdvertisementsIntervalRepository.Post(model);
+                            _unitOfWork.Save();
+                        }
+                        else
+                        {
+                            advertisementInterval.AdvertisementId = advertisement.AdvertisementId;
+                            advertisementInterval.IntervalId = interval.IntervalId;
+                            _unitOfWork.AdvertisementsIntervalRepository.Put(advertisementInterval);
+                            _unitOfWork.Save();
+                        }
+
+
                     }
                 }
                 var campaignList = new List<Campaigns>();
+
                 foreach (var campaign in advertisementsDto.CampaignId)
                 {
                     var _campaign = _unitOfWork.CampaignRepository.GetById(x => x.CampaignId == Obfuscation.Decode(campaign));
-                    if (_campaign == null)
-                        return ReturnResponse.ErrorResponse(CommonMessage.CampaignNotFound, StatusCodes.Status404NotFound);
 
-                    campaignList.Add(_campaign);
+                    if (_campaign != null)
+                    {
+                        campaignList.Add(_campaign);
+                    }
                 }
 
                 var advertisementsCampaign = _unitOfWork.BroadcastRepository.Get(null, x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId)).ToList();
-                foreach (var broadcast in advertisementsCampaign)
-                {
-                    _unitOfWork.BroadcastRepository.Remove(broadcast);
-                    _unitOfWork.Save();
-                }
-                //var campaignList = new List<Campaign>();
-                //var b = _unitOfWork.CampaignRepository.Get(null, x => x.CampaignId == advertisements.FirstOrDefault().Broadcasts.FirstOrDefault().CampaignId, null, x => x.Broadcasts).ToList();
-                //foreach (var campaign in b)
-                //{
-                //    //Campaign _campaign = _mapper.Map<Campaign>(campaign);
-                //    campaignList.Add(campaign);
-                //}
+                _unitOfWork.BroadcastRepository.RemoveRange(advertisementsCampaign);
+                _unitOfWork.Save();
 
-
-                //foreach (var broadcast in campaignList)
-                //{
-                //    _unitOfWork.BroadcastRepository.Delete(broadcast.Broadcasts.FirstOrDefault().BroadcastId);
-                //    _unitOfWork.Save();
-                //}
-                int counter = 1;
-                foreach (var broadcasts in campaignList)
+                foreach (var campaign in campaignList)
                 {
-                    var _broadcast = new Broadcasts
+                    Broadcasts _broadcast = new Broadcasts()
                     {
-                        AdvertisementId = Obfuscation.Decode(advertisementsDto.AdvertisementId),
-                        CampaignId = broadcasts.CampaignId,
-                        CreatedAt = DateTime.Now,
-                        Sort = counter
+                        AdvertisementId = advertisement.AdvertisementId,
+                        CampaignId = campaign.CampaignId
                     };
-                    counter++;
                     _unitOfWork.BroadcastRepository.Post(_broadcast);
                     _unitOfWork.Save();
                 }
-                var medias = _unitOfWork.MediaRepository.Get(null, x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId), null, x => x.MediaMetadata).ToList();
-
-                var videoMetadata = new VideoMetadata();
-                MediaMetadata mediaMetadata = medias.FirstOrDefault().MediaMetadata;
-
-                for (int i = 0; i < advertisementsDto.MediaUrl.Count; i++)
+                if (!string.IsNullOrEmpty(advertisementsDto.MediaUrl))
                 {
-                    if (medias.FirstOrDefault().Url != advertisementsDto.MediaUrl[i])
+                    var mediaData = new Medias();
+                    mediaData = _unitOfWork.MediaRepository.GetById(x => x.Url == advertisementsDto.MediaUrl, null, x => x.MediaMetadata);
+                    if (mediaData != null)
                     {
-                        var fileName = advertisementsDto.MediaUrl[i].Split('/');
+
+                        var fileName = advertisementsDto.MediaUrl.Split('/');
                         var fileExtension = fileName.Last().Split('.').Last();
-                        mediaMetadata = new MediaMetadata();
+                        var videoMetadata = new VideoMetadata();
 
+
+                        if (mediaData.MediaMetadata == null)
+                        {
+                            var mediaMetadata = new MediaMetadata();
+
+                            if (fileExtension == "mp4")
+                            {
+                                videoMetadata = await _mediaTypeConversionRepository.ConvertVideoAsync(advertisementsDto.MediaUrl);
+                                mediaMetadata.Duration = videoMetadata.Duration;
+                                mediaMetadata.Size = videoMetadata.VideoSize;
+                            }
+                            else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
+                            {
+                                var imagesize = await _mediaTypeConversionRepository.ConvertImageAsync(advertisementsDto.MediaUrl);
+                                mediaMetadata.Duration = 0;
+                                mediaMetadata.Size = imagesize;
+                            }
+                            _unitOfWork.MediaMetadataRepository.Post(mediaMetadata);
+                            _unitOfWork.Save();
+                            mediaMetadataId = mediaMetadata.MediaMetadataId;
+                        }
+                        else
+                        {
+                            if (fileExtension == "mp4")
+                            {
+                                videoMetadata = await _mediaTypeConversionRepository.ConvertVideoAsync(advertisementsDto.MediaUrl);
+                                mediaData.MediaMetadata.Duration = videoMetadata.Duration;
+                                mediaData.MediaMetadata.Size = videoMetadata.VideoSize;
+                            }
+                            else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
+                            {
+                                var imagesize = await _mediaTypeConversionRepository.ConvertImageAsync(advertisementsDto.MediaUrl);
+                                mediaData.MediaMetadata.Duration = 0;
+                                mediaData.MediaMetadata.Size = imagesize;
+                            }
+                            _unitOfWork.MediaMetadataRepository.Put(mediaData.MediaMetadata);
+                            _unitOfWork.Save();
+                            mediaMetadataId = mediaData.MediaMetadataId;
+                        }
                         if (fileExtension == "mp4")
-                        {
-                            videoMetadata = await _mediaTypeConversionRepository.ConvertVideoAsync(advertisementsDto.MediaUrl[i]);
-                            mediaMetadata.Duration = videoMetadata.Duration;
-                            mediaMetadata.Size = videoMetadata.VideoSize;
-                            medias.FirstOrDefault().MediaType = MediaType.video;
-                        }
-                        else if (fileExtension == "jpg" || fileExtension == "png" || fileExtension == "jpeg")
-                        {
-                            var imagesize = await _mediaTypeConversionRepository.ConvertImageAsync(advertisementsDto.MediaUrl[i]);
-                            mediaMetadata.Duration = 0;
-                            mediaMetadata.Size = imagesize;
-                            medias.FirstOrDefault().MediaType = MediaType.image;
-                        }
-                        medias.FirstOrDefault().Url = advertisementsDto.MediaUrl[i];
-
+                            mediaData.MediaType = MediaType.video;
+                        else
+                            mediaData.MediaType = MediaType.image;
+                        mediaData.MediaMetadataId = mediaMetadataId;
+                        mediaData.Url = advertisementsDto.MediaUrl;
+                        advertisement.MediaId = mediaData.MediaId;
+                        _unitOfWork.MediaRepository.Put(mediaData);
+                        _unitOfWork.Save();
                     }
-                    _unitOfWork.MediaMetadataRepository.Put(mediaMetadata);
-                    _unitOfWork.Save();
-                    medias.FirstOrDefault().MediaMetadataId = mediaMetadata.MediaMetadataId;
-                    _unitOfWork.MediaRepository.Put(medias.FirstOrDefault());
-                    _unitOfWork.Save();
-                }
 
+                }
+                else
+                {
+                    advertisement.MediaId = null;
+
+                }
+                advertisement.InstitutionId = Obfuscation.Decode(advertisementsDto.InstitutionId);
+                advertisement.ResourceNumber = advertisementsDto.ResourceNumber;
+                advertisement.Name = advertisementsDto.Name;
+                advertisement.TintColor = advertisementsDto.TintColor;
+                advertisement.InvertedTintColor = advertisementsDto.InvertedTintColor;
+
+                _unitOfWork.AdvertisementRepository.Put(advertisement);
+                _unitOfWork.Save();
+                _unitOfWork.Commit();
+
+                //var response = new GetResponse<Advertisements>{
+                //    Code= 200,
+                //    Status = true,
+                //    Message = CommonMessage.AdvertisementUpdate
+                //};
+                var response = new Response
+                {
+                    Code = 200,
+                    Status = true,
+                    Message = CommonMessage.AdvertisementUpdate
+                };
+                return response;
             }
-            var response = new GetResponse<Advertisements>();
-            return await Task.FromResult(response);
+            catch (Exception ex)
+            {
+
+                _unitOfWork.Rollback();
+                throw ex;
+            }
+
         }
     }
 }

@@ -59,8 +59,6 @@ namespace AdvertisementService.Models
         }
         public class GetResponse<T> : Response where T : class
         {
-            internal List<GetAdvertisementsDto> data;
-
             public Pagination Pagination { get; set; }
             public List<T> Data { get; set; }
             [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
