@@ -91,8 +91,8 @@ namespace AdvertisementService.DAL
                     throw new Exception(CommonMessage.IntervalNotFound);
                 if (interval.AdvertisementsIntervals != null)
                 {
-                        _unitOfWork.AdvertisementsIntervalRepository.RemoveRange(interval.AdvertisementsIntervals);
-                 
+                    _unitOfWork.AdvertisementsIntervalRepository.RemoveRange(interval.AdvertisementsIntervals);
+
                 }
                 _unitOfWork.IntervalRepository.Remove(interval);
                 _unitOfWork.Save();
@@ -101,7 +101,27 @@ namespace AdvertisementService.DAL
             }
             catch (Exception ex)
             {
+                _unitOfWork.Rollback();
                 throw ex;
+            }
+        }
+
+        internal Response UpdateIntervals(Intervals interval)
+        {
+            try
+            {
+                var intervalData = _unitOfWork.IntervalRepository.GetById(x => x.IntervalId == interval.IntervalId);
+                if (intervalData == null)
+                    return ReturnResponse.ErrorResponse(CommonMessage.IntervalNotFound, StatusCodes.Status404NotFound);
+
+                intervalData.Title = interval.Title;
+                _unitOfWork.IntervalRepository.Put(intervalData);
+                _unitOfWork.Save();
+                return ReturnResponse.SuccessResponse(CommonMessage.IntervalUpdate, false);
+            }
+            catch (Exception ex)
+            {
+                return ReturnResponse.ExceptionResponse(ex);
             }
         }
     }

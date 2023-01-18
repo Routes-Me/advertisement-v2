@@ -71,7 +71,7 @@ namespace AdvertisementService.Controllers
         {
             try
             {
-                GetResponse<GetAdvertisementsDto> getAdvertisementDto = new AdvertisementsDAL(_unitOfWork, _config, _mediaTypeConversionRepository, _dependencies, _appSettings, _mapper).GetAdvertisementById(id, include);
+                var getAdvertisementDto = new AdvertisementsDAL(_unitOfWork, _config, _mediaTypeConversionRepository, _dependencies, _appSettings, _mapper).GetAdvertisementById(id, include);
                 return StatusCode(getAdvertisementDto.Code, getAdvertisementDto);
             }
             catch (Exception e)

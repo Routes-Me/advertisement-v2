@@ -70,19 +70,35 @@ namespace AdvertisementService.Controllers
 
         }
 
-        //[HttpDelete]
-        //[Route("{id}")]
-        //public IActionResult Delete(string id)
-        //{
-        //    try
-        //    {
-        //        var interval = new IntervalsDAL(_unitOfWork, _mapper).DeleteInterval(id);
-        //        return StatusCode(StatusCodes.Status200OK, ReturnResponse.SuccessResponse(CommonMessage.IntervalDelete, false, interval.IntervalId));
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return StatusCode(StatusCodes.Status400BadRequest, ReturnResponse.ExceptionResponse(ex));
-        //    }
-        //}
+        [HttpDelete]
+        [Route("{id}")]
+        public IActionResult Delete(string id)
+        {
+            try
+            {
+                var interval = new IntervalsDAL(_unitOfWork, _mapper).DeleteInterval(id);
+                return StatusCode(StatusCodes.Status200OK, ReturnResponse.SuccessResponse(CommonMessage.IntervalDelete, false, interval.IntervalId));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status400BadRequest, ReturnResponse.ExceptionResponse(ex));
+            }
+        }
+
+        [HttpPut]
+        public IActionResult Put([FromBody] Intervals interval)
+        {
+            try
+            {
+                var _interval = new IntervalsDAL(_unitOfWork, _mapper).UpdateIntervals(interval);
+                return StatusCode(StatusCodes.Status200OK, ReturnResponse.SuccessResponse(CommonMessage.IntervalUpdate, false));
+
+            }
+            catch (Exception ex)
+            {
+                _unitOfWork.Rollback();
+                return StatusCode(StatusCodes.Status400BadRequest, ReturnResponse.ErrorResponse(ex.Message, 400));
+            }
+        }
     }
 }

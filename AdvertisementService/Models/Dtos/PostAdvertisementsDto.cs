@@ -8,10 +8,11 @@ namespace AdvertisementService.Models.Dtos
         public string InstitutionId { get; set; }
         public string IntervalId { get; set; }
         public List<string> CampaignId { get; set; }
-        public List<string> MediaUrl { get; set; }
-        public float Sequence { get; set; }
+        public string MediaUrl { get; set; }
         public string Name { get; set; }
         public int? TintColor { get; set; }
         public int? InvertedTintColor { get; set; }
+        public string? ResourceNumber { get; set; }
+
     }
 }
