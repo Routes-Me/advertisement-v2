@@ -129,10 +129,12 @@ namespace AdvertisementService.DAL
 
                 _unitOfWork.CampaignRepository.Delete(campaign.CampaignId);
                 _unitOfWork.Save();
+                _unitOfWork.Commit();
                 return campaign;
             }
             catch (Exception ex)
             {
+                _unitOfWork.Rollback();
                 return ReturnResponse.ExceptionResponse(ex);
             }
         }

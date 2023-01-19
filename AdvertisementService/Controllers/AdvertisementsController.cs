@@ -96,7 +96,7 @@ namespace AdvertisementService.Controllers
         }
 
         [HttpPut]
-        public async Task<IActionResult> Put(PostAdvertisementsDto advertisementsDto)
+        public async Task<Response> Put(PostAdvertisementsDto advertisementsDto)
         {
             try
             {

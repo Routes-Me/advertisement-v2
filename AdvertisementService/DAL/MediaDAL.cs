@@ -107,7 +107,7 @@ namespace AdvertisementService.DAL
             return getMediaDto;
         }
 
-        internal async Task<Medias> PostMediaAsync(Medias media)
+        internal async Task<Medias> PostMediaAsync(PostMediaDto media)
         {
             if (media == null)
                 throw new Exception(CommonMessage.InvalidData);
@@ -121,8 +121,8 @@ namespace AdvertisementService.DAL
             }
             MediaMetadata mediaMetadata = new MediaMetadata()
             {
-                Duration = media.MediaMetadata.Duration,
-                Size = media.MediaMetadata.Size
+                Duration = media.Duration,
+                Size = media.Size
             };
             await _unitOfWork.MediaMetadataRepository.PostAsync(mediaMetadata);
             _unitOfWork.Save();

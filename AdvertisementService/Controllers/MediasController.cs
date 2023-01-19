@@ -60,7 +60,7 @@ namespace AdvertisementService.Controllers
 
         [HttpPost]
         [DisableRequestSizeLimit]
-        public async Task<IActionResult> Post([FromBody] Medias media)
+        public async Task<IActionResult> Post([FromForm] PostMediaDto media)
         {
             try
             {

@@ -7,6 +7,7 @@ using AdvertisementService.Models.Dtos;
 using AutoMapper;
 using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 using Microsoft.EntityFrameworkCore;
@@ -398,7 +399,7 @@ namespace AdvertisementService.DAL
             {
                 int? mediaMetadataId = 0;
                 var advertisement = _unitOfWork.AdvertisementRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId));
-
+                _unitOfWork.BeginTransaction();
 
                 if (advertisement == null)
                     throw new KeyNotFoundException(CommonMessage.AdvertisementNotFound);
@@ -415,7 +416,7 @@ namespace AdvertisementService.DAL
                                 AdvertisementId = Obfuscation.Decode(advertisementsDto.AdvertisementId),
                                 IntervalId = Obfuscation.Decode(advertisementsDto.IntervalId)
                             };
-                            _unitOfWork.BeginTransaction();
+                            
                             _unitOfWork.AdvertisementsIntervalRepository.Post(model);
                             _unitOfWork.Save();
                         }
@@ -451,7 +452,8 @@ namespace AdvertisementService.DAL
                     Broadcasts _broadcast = new Broadcasts()
                     {
                         AdvertisementId = advertisement.AdvertisementId,
-                        CampaignId = campaign.CampaignId
+                        CampaignId = campaign.CampaignId,
+                        CreatedAt = DateTime.Now
                     };
                     _unitOfWork.BroadcastRepository.Post(_broadcast);
                     _unitOfWork.Save();

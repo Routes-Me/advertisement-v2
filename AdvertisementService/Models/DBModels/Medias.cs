@@ -19,6 +19,7 @@ namespace AdvertisementService.Models.DBModels
         public int? MediaMetadataId { get; set; }
         [NotMappedAttribute]
         public IFormFile MediaFile { get; set; }
+        
 
         public virtual MediaMetadata MediaMetadata { get; set; }
         public virtual ICollection<Advertisements> Advertisements { get; set; }

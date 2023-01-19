@@ -117,7 +117,7 @@ namespace AdvertisementService.Models.DBModels
                 entity.HasOne(d => d.Advertisement)
                     .WithMany(p => p.AdvertisementsIntervals)
                     .HasForeignKey(d => d.AdvertisementId)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .OnDelete(DeleteBehavior.Cascade)
                     .HasConstraintName("advertisements_intervals_ibfk_2");
 
                 entity.HasOne(d => d.Interval)
