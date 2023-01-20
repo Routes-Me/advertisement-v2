@@ -6,11 +6,14 @@ using AdvertisementService.Models.DBModels;
 using AdvertisementService.Models.Dtos;
 using AutoMapper;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Azure.Storage;
 using Microsoft.Azure.Storage.Blob;
 using RoutesSecurity;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using static AdvertisementService.Models.Response;
@@ -135,6 +138,62 @@ namespace AdvertisementService.DAL
                 MediaMetadataId = mediaMetadata.MediaMetadataId
             };
             return _media;
+        }
+
+        internal async Task<Medias> UpdateMediaAsync(PostMediaDto media)
+        {
+            try
+            {
+                if (media == null)
+                    throw new Exception(CommonMessage.InvalidData);
+
+                _unitOfWork.BeginTransaction();
+
+                var _media = _unitOfWork.MediaRepository.GetById(x => x.MediaId == media.MediaId, null, x => x.Advertisements, x => x.MediaMetadata);
+                if (_media == null)
+                    throw new Exception(CommonMessage.MediaNotFound);
+
+                if (_media.Url != null)
+                {
+                    var _mediaReferenceName = _media.Url.Split('/');
+                    if (CloudStorageAccount.TryParse(_config.StorageConnection, out CloudStorageAccount storageAccount))
+                    {
+                        CloudBlobClient BlobClient = storageAccount.CreateCloudBlobClient();
+                        CloudBlobContainer container = BlobClient.GetContainerReference(_config.Container);
+                        if (await container.ExistsAsync())
+                        {
+                            CloudBlob file = container.GetBlobReference(_mediaReferenceName.LastOrDefault());
+                            if (await file.ExistsAsync())
+                                await file.DeleteAsync();
+                        }
+                    }
+                }
+                if (media.MediaType == MediaType.video)
+                {
+                    media.Url = await CloudStorage.UploadVideoToCloudReturnUrlAsync(media, _config);
+                }
+                if (media.MediaType == MediaType.image)
+                {
+                    media.Url = await CloudStorage.UploadImageToCloudReturnUrlAsync(media, _config);
+                }
+                _media.MediaMetadata.Duration = media.Duration;
+                _media.MediaMetadata.Size = media.Size;
+                _unitOfWork.MediaMetadataRepository.Put(_media.MediaMetadata);
+                _unitOfWork.Save();
+                _media.MediaFile = media.MediaFile;
+                _media.Url = media.Url;
+                _media.MediaType = media.MediaType;
+                _media.CreatedAt = DateTime.Now;
+                _unitOfWork.MediaRepository.Put(_media);
+                _unitOfWork.Save();
+                _unitOfWork.Commit();
+                return _media;
+            }
+            catch (Exception ex)
+            {
+                _unitOfWork.Rollback();
+                throw ex;
+            }
         }
     }
 }

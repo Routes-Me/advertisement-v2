@@ -10,5 +10,6 @@
         public string InstitutionId { get; set; }
         public string Type { get; set; }
         public string LogoUrl { get; set; }
+        public string Link { get; set; }
     }
 }

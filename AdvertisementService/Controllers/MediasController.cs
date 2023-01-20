@@ -2,7 +2,6 @@
 using AdvertisementService.DAL;
 using AdvertisementService.Models;
 using AdvertisementService.Models.Common;
-using AdvertisementService.Models.DBModels;
 using AdvertisementService.Models.Dtos;
 using AutoMapper;
 using Microsoft.AspNetCore.Http;
@@ -88,6 +87,20 @@ namespace AdvertisementService.Controllers
                 return StatusCode(StatusCodes.Status400BadRequest, ReturnResponse.ErrorResponse(e.Message, 400));
             }
 
+        }
+
+        [HttpPut]
+        public async Task<IActionResult> Put([FromForm] PostMediaDto media)
+        {
+            try
+            {
+                var _media = await new MediaDAL(_unitOfWork, _config, _mapper).UpdateMediaAsync(media);
+                return StatusCode(StatusCodes.Status200OK, ReturnResponse.SuccessResponse(CommonMessage.MediaUpdate, false));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status400BadRequest, ReturnResponse.ExceptionResponse(ex));
+            }
         }
 
     }
