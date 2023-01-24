@@ -90,13 +90,13 @@ namespace AdvertisementService.Models.DBModels
                 entity.HasOne(d => d.Advertisement)
                     .WithMany(p => p.Broadcasts)
                     .HasForeignKey(d => d.AdvertisementId)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .OnDelete(DeleteBehavior.Cascade)
                     .HasConstraintName("advertisements_campaigns_ibfk_2");
 
                 entity.HasOne(d => d.Campaign)
                     .WithMany(p => p.Broadcasts)
                     .HasForeignKey(d => d.CampaignId)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .OnDelete(DeleteBehavior.Cascade)
                     .HasConstraintName("advertisements_campaigns_ibfk_1");
             });
 
@@ -123,7 +123,7 @@ namespace AdvertisementService.Models.DBModels
                 entity.HasOne(d => d.Interval)
                     .WithMany(p => p.AdvertisementsIntervals)
                     .HasForeignKey(d => d.IntervalId)
-                    .OnDelete(DeleteBehavior.ClientSetNull)
+                    .OnDelete(DeleteBehavior.Cascade)
                     .HasConstraintName("advertisements_intervals_ibfk_1");
             });
 

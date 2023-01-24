@@ -63,7 +63,7 @@ namespace AdvertisementService.DAL
                 _unitOfWork.AdvertisementRepository.Remove(advertisement);
                 _unitOfWork.Save();
 
-                APIExtensions.DeleteApi(_appSettings.Host + _dependencies.PromotionsByAdvertisementUrl + id);
+                //APIExtensions.DeleteApi(_appSettings.Host + _dependencies.PromotionsByAdvertisementUrl + id);
 
                 if (CloudStorageAccount.TryParse(_config.StorageConnection, out CloudStorageAccount storageAccount))
                 {

@@ -119,42 +119,45 @@ namespace AdvertisementService.DAL
             if (new CampaignsDAL(_unitOfWork,_mapper).MarkInactive())
             {
                 var broadcast = _unitOfWork.BroadcastRepository.GetById(x => x.Campaign.Status == "active" && x.Campaign.StartAt <= DateTime.Now && x.Campaign.EndAt >= DateTime.Now && x.Advertisement.AdvertisementId == Obfuscation.Decode(id), null, x => x.Advertisement.Media);
-
-                contentReadDto.ContentId = Obfuscation.Encode(broadcast.AdvertisementId);
-                contentReadDto.Type = broadcast.Advertisement.Media.MediaType.ToString();
-                contentReadDto.Url = broadcast.Advertisement.Media.Url;
-                contentReadDto.ResourceNumber = broadcast.Advertisement.ResourceNumber;
-                contentReadDto.Name = broadcast.Advertisement.Name;
-                contentReadDto.TintColor = broadcast.Advertisement.TintColor;
-
-
-                if (contentReadDto != null)
+                if (broadcast != null)
                 {
-                    GetPromotionDto promotionGetModel = APIExtensions.GetPromotionsContentById(contentReadDto, _appSettings.Host + _dependencies.CouponsUrl);
 
-                    if (contentReadDto.ContentId == promotionGetModel.AdvertisementId)
+                    contentReadDto.ContentId = Obfuscation.Encode(broadcast.AdvertisementId);
+                    contentReadDto.Type = broadcast.Advertisement.Media.MediaType.ToString();
+                    contentReadDto.Url = broadcast.Advertisement.Media.Url;
+                    contentReadDto.ResourceNumber = broadcast.Advertisement.ResourceNumber;
+                    contentReadDto.Name = broadcast.Advertisement.Name;
+                    contentReadDto.TintColor = broadcast.Advertisement.TintColor;
+
+
+                    if (contentReadDto != null)
                     {
-                        GetPromotionDto promotionReadDto = new GetPromotionDto();
-                        promotionReadDto.Title = promotionGetModel.Title;
-                        promotionReadDto.Subtitle = promotionGetModel.Subtitle;
-                        promotionReadDto.PromotionId = promotionGetModel.PromotionId;
-                        if (!string.IsNullOrEmpty(promotionGetModel.Type))
+                        GetPromotionDto promotionGetModel = APIExtensions.GetPromotionsContentById(contentReadDto, _appSettings.Host + _dependencies.CouponsUrl);
+
+                        if (contentReadDto.ContentId == promotionGetModel.AdvertisementId)
                         {
-                            if (promotionGetModel.Type.ToLower() == "links")
+                            GetPromotionDto promotionReadDto = new GetPromotionDto();
+                            promotionReadDto.Title = promotionGetModel.Title;
+                            promotionReadDto.Subtitle = promotionGetModel.Subtitle;
+                            promotionReadDto.PromotionId = promotionGetModel.PromotionId;
+                            if (!string.IsNullOrEmpty(promotionGetModel.Type))
                             {
-                                promotionReadDto.Link = _appSettings.LinkUrlForContent + promotionGetModel.PromotionId;
+                                if (promotionGetModel.Type.ToLower() == "links")
+                                {
+                                    promotionReadDto.Link = _appSettings.LinkUrlForContent + promotionGetModel.PromotionId;
+                                }
+                                if (promotionGetModel.Type.ToLower() == "coupons")
+                                {
+                                    promotionReadDto.Link = _appSettings.CouponUrlForContent + promotionGetModel.PromotionId;
+                                }
+                                if (promotionGetModel.Type.ToLower() == "places")
+                                {
+                                    promotionReadDto.Link = null;
+                                }
                             }
-                            if (promotionGetModel.Type.ToLower() == "coupons")
-                            {
-                                promotionReadDto.Link = _appSettings.CouponUrlForContent + promotionGetModel.PromotionId;
-                            }
-                            if (promotionGetModel.Type.ToLower() == "places")
-                            {
-                                promotionReadDto.Link = null;
-                            }
+                            contentReadDto.Promotion = promotionReadDto;
                         }
-                        contentReadDto.Promotion = promotionReadDto;
-                    }
+                    } 
                 }
             }
 

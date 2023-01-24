@@ -32,7 +32,7 @@ namespace AdvertisementService.DAL
             {
                 if (campaign == null)
                 {
-                    throw new Exception(CommonMessage.CampaignNotFound);
+                    throw new ArgumentNullException(CommonMessage.InvalidData);
                 }
                 await _unitOfWork.CampaignRepository.PostAsync(campaign);
                 _unitOfWork.Save();
