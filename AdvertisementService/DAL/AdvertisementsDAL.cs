@@ -16,7 +16,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RoutesSecurity;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.Tracing;
 using System.Linq;
 using System.Threading.Tasks;
 using static AdvertisementService.Models.Response;
@@ -370,13 +372,15 @@ namespace AdvertisementService.DAL
                     await _unitOfWork.AdvertisementsIntervalRepository.PostAsync(advertisementsinterval);
                     _unitOfWork.Save();
                 }
+                int? maxSort = _unitOfWork.BroadcastRepository.FindMax(x => x.Sort);
                 foreach (var _campaign in listCampaign)
                 {
                     Broadcasts broadcast = new Broadcasts()
                     {
                         AdvertisementId = advertisement.AdvertisementId,
                         CampaignId = _campaign.CampaignId,
-                        CreatedAt = DateTime.Now
+                        CreatedAt = DateTime.Now,
+                        Sort = ++maxSort
                     };
                     await _unitOfWork.BroadcastRepository.PostAsync(broadcast);
                     _unitOfWork.Save();

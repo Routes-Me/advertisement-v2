@@ -9,6 +9,8 @@ namespace AdvertisementService.Abstraction
 {
     public interface IGenericRepository<T> where T : class
     {
+        Task<IEnumerable<T>> Find(Expression<Func<T, bool>> predicate);
+        int? FindMax(Expression<Func<T, int?>> predicate);
         void Delete(int id);
         Task DeleteAsync(int id);
         Task<List<T>> GetAsync(Pagination pagination, Expression<Func<T, bool>> filter = null,
