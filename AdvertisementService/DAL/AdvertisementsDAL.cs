@@ -412,7 +412,7 @@ namespace AdvertisementService.DAL
                     var interval = _unitOfWork.IntervalRepository.GetById(x => x.IntervalId == Obfuscation.Decode(advertisementsDto.IntervalId));
                     if (interval != null)
                     {
-                        var advertisementInterval = _unitOfWork.AdvertisementsIntervalRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId));
+                        var advertisementInterval = _unitOfWork.AdvertisementsIntervalRepository.GetById(x => x.AdvertisementId == Obfuscation.Decode(advertisementsDto.AdvertisementId) && x.IntervalId == Obfuscation.Decode(advertisementsDto.IntervalId));
                         if (advertisementInterval == null)
                         {
                             var model = new AdvertisementsIntervals
@@ -420,7 +420,7 @@ namespace AdvertisementService.DAL
                                 AdvertisementId = Obfuscation.Decode(advertisementsDto.AdvertisementId),
                                 IntervalId = Obfuscation.Decode(advertisementsDto.IntervalId)
                             };
-                            
+
                             _unitOfWork.AdvertisementsIntervalRepository.Post(model);
                             _unitOfWork.Save();
                         }
