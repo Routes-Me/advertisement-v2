@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using RoutesSecurity;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using static AdvertisementService.Models.Response;
 
@@ -22,7 +23,7 @@ namespace AdvertisementService.DAL
         private readonly Dependencies _dependencies;
         private readonly AppSettings _appSettings;
         private readonly IMapper _mapper;
-        public ContentsDAL(IUnitOfWork unitOfWork, Dependencies dependencies, AppSettings appSettings, IMapper mapper )
+        public ContentsDAL(IUnitOfWork unitOfWork, Dependencies dependencies, AppSettings appSettings, IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _dependencies = dependencies;
@@ -30,7 +31,7 @@ namespace AdvertisementService.DAL
             _mapper = mapper;
         }
 
-       
+
         public async Task<GetResponse<GetContentDto>> GetContent(Pagination pagination)
         {
             try
@@ -40,7 +41,7 @@ namespace AdvertisementService.DAL
 
                 if (new CampaignsDAL(_unitOfWork, _mapper).MarkInactive())
                 {
-                    var broadcastsList = await _unitOfWork.BroadcastRepository.GetAsync(pagination, x => x.Campaign.Status == "active" && x.Campaign.StartAt <= DateTime.Now && x.Campaign.EndAt >= DateTime.Now, null, x => x.Campaign, x => x.Advertisement, x => x.Advertisement.Media);
+                    var broadcastsList = await _unitOfWork.BroadcastRepository.GetAsync(pagination, x => x.Campaign.Status == "active" && x.Campaign.StartAt <= DateTime.Now && x.Campaign.EndAt >= DateTime.Now, x => x.OrderBy(x => x.Sort), x => x.Campaign, x => x.Advertisement, x => x.Advertisement.Media);
 
                     foreach (var broadcast in broadcastsList)
                     {
@@ -54,7 +55,7 @@ namespace AdvertisementService.DAL
                             Type = broadcast.Advertisement.Media.MediaType.ToString(),
                             Url = broadcast.Advertisement.Media.Url,
                         };
-                        
+
                         getContentDtoList.Add(getContentDto);
                     }
                     if (getContentDtoList.Count > 0)
@@ -110,13 +111,13 @@ namespace AdvertisementService.DAL
 
         }
 
-       
+
         public GetResponseById<GetContentDto> GetByIdContent(string id)
         {
             var response = new GetResponseById<GetContentDto>();
             GetContentDto contentReadDto = new GetContentDto();
 
-            if (new CampaignsDAL(_unitOfWork,_mapper).MarkInactive())
+            if (new CampaignsDAL(_unitOfWork, _mapper).MarkInactive())
             {
                 var broadcast = _unitOfWork.BroadcastRepository.GetById(x => x.Campaign.Status == "active" && x.Campaign.StartAt <= DateTime.Now && x.Campaign.EndAt >= DateTime.Now && x.Advertisement.AdvertisementId == Obfuscation.Decode(id), null, x => x.Advertisement.Media);
                 if (broadcast != null)
@@ -157,7 +158,7 @@ namespace AdvertisementService.DAL
                             }
                             contentReadDto.Promotion = promotionReadDto;
                         }
-                    } 
+                    }
                 }
             }
 
