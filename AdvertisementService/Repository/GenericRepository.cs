@@ -172,6 +172,11 @@ namespace AdvertisementService.Repository
             T entityToDelete = await dbSet.FindAsync(id);
             Delete(entityToDelete);
         }
+
+        public int? FindMax(Expression<Func<T, int?>> predicate)
+        {
+            return dbSet.Max(predicate).GetValueOrDefault(0);
+        }
     }
 
 
