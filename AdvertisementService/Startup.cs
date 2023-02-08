@@ -30,7 +30,13 @@ namespace AdvertisementService
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().AddNewtonsoftJson();
-            services.Cors();
+            services.AddCors(options =>
+            {
+                options.AddPolicy("AllowSpecificOrigin",
+                    builder => builder.WithOrigins("https://stage.portal.routesme.com/home")
+                    .AllowAnyHeader()
+                    .AllowAnyMethod());
+            });
             services.AddController();
             services.AddDbContexts(Configuration);
             services.AddInjections();
@@ -48,7 +54,7 @@ namespace AdvertisementService
             app.UseRouting();
             app.UseStaticFiles();
             app.UseAuthorization();
-            app.UseCors("MyPolicy");
+            app.UseCors("AllowSpecificOrigin");
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
